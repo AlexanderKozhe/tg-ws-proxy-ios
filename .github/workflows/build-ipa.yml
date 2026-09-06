@@ -1,0 +1,59 @@
+name: Build IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Платформа установки"
+        type: choice
+        default: side
+        options: [side, alt, lc]
+      components:
+        description: "Компоненты через запятую (wd,la,cc[,vpn]) или none"
+        type: string
+        default: "wd,la,cc"
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout (с submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Выбрать Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Rust toolchain + iOS targets
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+
+      - name: Кэш cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .build/rust-target
+          key: cargo-${{ runner.os }}-${{ hashFiles('src-wrapper/Cargo.lock', 'vendor/tg-ws-proxy-android/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Сборка
+        run: |
+          chmod +x build.sh scripts/*.sh
+          ./build.sh -p "${{ inputs.platform }}" -c "${{ inputs.components }}"
+
+      - name: Что собралось
+        run: ls -lh dist/
+
+      - name: Загрузить IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: TgWsProxy-${{ inputs.platform }}-unsigned
+          path: dist/*.ipa
+          if-no-files-found: error
+          retention-days: 30
